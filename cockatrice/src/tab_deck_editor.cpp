@@ -92,7 +92,7 @@ TabDeckEditor::TabDeckEditor(TabSupervisor *_tabSupervisor, QWidget *parent)
 	cardInfo = new CardInfoWidget(CardInfoWidget::ModeDeckEditor);
 	cardInfo->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Expanding);
 
-	QToolBar *verticalToolBar = new QToolBar;
+	verticalToolBar = new QToolBar;
 	verticalToolBar->setOrientation(Qt::Vertical);
 	verticalToolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 	verticalToolBar->setIconSize(QSize(24, 24));
@@ -233,12 +233,19 @@ TabDeckEditor::TabDeckEditor(TabSupervisor *_tabSupervisor, QWidget *parent)
 	aDecrement = new QAction(QString(), this);
         aDecrement->setIcon(QIcon(":/resources/decrement.svg"));
 	connect(aDecrement, SIGNAL(triggered()), this, SLOT(actDecrement()));
+	aMoveToMaindeck = new QAction(QString(), this);
+        aMoveToMaindeck->setIcon(QIcon(":/resources/move_to_maindeck.svg"));
+	connect(aMoveToMaindeck, SIGNAL(triggered()), this, SLOT(actMoveToMaindeck()));
+	aMoveToSideboard = new QAction(QString(), this);
+        aMoveToSideboard->setIcon(QIcon(":/resources/move_to_sideboard.svg"));
+	connect(aMoveToSideboard, SIGNAL(triggered()), this, SLOT(actMoveToSideboard()));
 
 	verticalToolBar->addAction(aAddCard);
 	verticalToolBar->addAction(aAddCardToSideboard);
 	verticalToolBar->addAction(aRemoveCard);
 	verticalToolBar->addAction(aIncrement);
 	verticalToolBar->addAction(aDecrement);
+	verticalToolBar->addAction(aMoveToSideboard);
 	verticalToolBar->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
 	
 	dlgCardSearch = new DlgCardSearch(this);
@@ -287,6 +294,8 @@ void TabDeckEditor::retranslateUi()
 	aIncrement->setShortcut(tr("+"));
 	aDecrement->setText(tr("&Decrement number"));
 	aDecrement->setShortcut(tr("-"));
+	aMoveToMaindeck->setText(tr("&Move to maindeck"));
+	aMoveToSideboard->setText(tr("&Move to sideboard"));
 	
 	deckMenu->setTitle(tr("&Deck editor"));
 	dbMenu->setTitle(tr("C&ard database"));
@@ -326,6 +335,15 @@ void TabDeckEditor::updateCardInfoRight(const QModelIndex &current, const QModel
 		return;
 	if (!current.model()->hasChildren(current.sibling(current.row(), 0)))
 		cardInfo->setCard(current.sibling(current.row(), 1).data().toString());
+	//Swap buttons if we are clicking on a card in the sideboard vs main deck
+	const QString currentArea = getZone(current);
+	if (currentArea == "Sideboard") {
+		verticalToolBar->addAction(aMoveToMaindeck);
+		verticalToolBar->removeAction(aMoveToSideboard);
+	} else if (currentArea == "Maindeck") {
+		verticalToolBar->addAction(aMoveToSideboard);
+		verticalToolBar->removeAction(aMoveToMaindeck);
+	}
 }
 
 void TabDeckEditor::updateSearch(const QString &search)
@@ -582,6 +600,55 @@ void TabDeckEditor::actDecrement()
 	else
 		deckModel->setData(numberIndex, count - 1, Qt::EditRole);
 	setModified(true);
+}
+
+QString TabDeckEditor::getZone(QModelIndex index)
+{
+	const QModelIndex parentIndex = index.parent().parent();
+	return parentIndex.sibling(parentIndex.row(), 1).data().toString();
+}
+
+void TabDeckEditor::moveCardHelper(QString zoneName)
+{
+	const QModelIndex currentIndex = deckView->selectionModel()->currentIndex();
+	if (!currentIndex.isValid() || deckModel->hasChildren(currentIndex))
+		return;
+		
+	const QString currentArea = getZone(currentIndex);
+	
+	//Don't move if the card is already in the area
+	if ((zoneName == "main" && currentArea == "Maindeck") ||
+		(zoneName == "side" && currentArea == "Sideboard"))
+		return;
+		
+	const QModelIndex numberIndex = currentIndex.sibling(currentIndex.row(), 0);
+	const int count = deckModel->data(numberIndex, Qt::EditRole).toInt();
+	const QString cardName = currentIndex.sibling(currentIndex.row(), 1).data().toString();
+	
+	CardInfo *info = db->getCard(cardName);
+	if (info->getIsToken())
+		zoneName = "tokens";
+	
+	QModelIndex newCardIndex = deckModel->addCard(cardName, zoneName);
+	recursiveExpand(newCardIndex);
+	deckView->setCurrentIndex(newCardIndex);
+	//Restore the correct count
+	deckModel->setData(newCardIndex, count, Qt::EditRole);
+	
+	//Remove the original row
+	deckModel->removeRow(currentIndex.row(), currentIndex.parent());
+
+	setModified(true);
+}
+
+void TabDeckEditor::actMoveToMaindeck()
+{
+	moveCardHelper("main");
+}
+
+void TabDeckEditor::actMoveToSideboard()
+{	
+	moveCardHelper("side");
 }
 
 void TabDeckEditor::actUpdatePrices()

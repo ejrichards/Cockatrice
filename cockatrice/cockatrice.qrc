@@ -31,6 +31,8 @@
         <file>resources/hr.jpg</file>
         <file alias="resources/appicon.svg">resources/cockatrice.svg</file>
         <file>resources/add_to_sideboard.svg</file>
+		<file>resources/move_to_sideboard.svg</file>
+		<file>resources/move_to_maindeck.svg</file>
         <file>resources/decrement.svg</file>
         <file>resources/increment.svg</file>
         <file>resources/remove_row.svg</file>
